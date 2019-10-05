@@ -23,7 +23,7 @@ float cubeLocX, cubeLocY, cubeLocZ;
 GLuint mvLoc, projLoc; 
 int width, height; 
 float aspect; 
-glm::mat4 pMat, vMat, mMat, mvMat;
+glm::mat4 pMat, vMat, mMat, mvMat, tMat, rMat;
 
 using namespace std;
 
@@ -91,7 +91,16 @@ void display(GLFWwindow* window, double currentTime) {
 	
 	//Build the view matrix, model matrix and model-view matrix
 	vMat = glm::translate(glm::mat4(1.0f), glm::vec3(-cameraX, -cameraY, -cameraZ));
-	mMat = glm::translate(glm::mat4(1.0f), glm::vec3(cubeLocX, cubeLocY, cubeLocZ));
+	//mMat = glm::translate(glm::mat4(1.0f), glm::vec3(cubeLocX, cubeLocY, cubeLocZ));
+	
+	//Use current time to compute different translations in x, y, and z
+	tMat = glm::translate(glm::mat4(1.0f), glm::vec3(sin(0.35f * currentTime) * 2.0f, cos(0.52f * currentTime) * 2.0f, sin(0.7f * currentTime) * 2.0f));
+	rMat = glm::rotate(glm::mat4(1.0f), 1.75f * (float)currentTime, glm::vec3(0.0f, 1.0f, 0.0f));
+	rMat = glm::rotate(rMat, 1.75f * (float)currentTime, glm::vec3(1.0f, 0.0f, 0.0f));
+	rMat = glm::rotate(rMat, 1.75f * (float)currentTime, glm::vec3(0.0f, 0.0f, 1.0f));
+
+	mMat = tMat * rMat;
+
 	mvMat = vMat * mMat;
 
 	//Copy perspective and MV matrices to corresponding uniform variables
