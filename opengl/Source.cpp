@@ -8,6 +8,8 @@
 #include <glm\gtc\type_ptr.hpp> // glm::value_ptr
 #include <glm\gtc\matrix_transform.hpp> // glm::translate, glm::rotate, glm::scale, glm::perspective
 #include "Utils.h"
+#include <stack>
+
 using namespace std;
 
 #define numVAOs 1
@@ -19,12 +21,14 @@ float pyrLocX, pyrLocY, pyrLocZ;
 GLuint renderingProgram;
 GLuint vao[numVAOs];
 GLuint vbo[numVBOs];
+stack<glm::mat4> mvStack;
 
 // variable allocation for display
 GLuint mLoc, vLoc, projLoc, tfLoc, mvLoc;
 int width, height;
 float aspect, timeFactor;
 glm::mat4 pMat, vMat, mMat, mvMat;
+
 
 void setupVertices(void)
 {
@@ -71,7 +75,7 @@ void init(GLFWwindow* window) {
 	aspect = (float)width / (float)height;
 	pMat = glm::perspective(1.0472f, aspect, 0.1f, 1000.0f);
 
-	cameraX = 0.0f; cameraY = 0.0f; cameraZ = 32.0f; // Z=32.0f when 24 instances, 420.0f when 100000 instances
+	cameraX = 0.0f; cameraY = 0.0f; cameraZ = 42.0f; // Z=32.0f when 24 instances, 420.0f when 100000 instances
 	cubeLocX = 0.0f, cubeLocY = 0.0f, cubeLocZ = 0.0f;
 	pyrLocX = 2.0f, pyrLocY = 2.0f, pyrLocZ = 20.0f;
 	setupVertices();
@@ -88,39 +92,59 @@ void display(GLFWwindow* window, double currentTime) {
 	projLoc = glGetUniformLocation(renderingProgram, "proj_matrix");
 	mvLoc = glGetUniformLocation(renderingProgram, "mv_matrix");
 
-	//The view matrix is computed once and used for both objects
+	//Set the projection matrix
+	glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(pMat));
+	
+	//The view matrix is computed once and used for all objects
 	vMat = glm::translate(glm::mat4(1.0f), glm::vec3(-cameraX, -cameraY, -cameraZ));
 
-	//1. Draw the cube - use buffer 0
-	mMat = glm::translate(glm::mat4(1.0f), glm::vec3(cubeLocX, cubeLocY, cubeLocZ));
-	mvMat = vMat * mMat;
+	//Push the view matrix onto the stack
+	mvStack.push(vMat);
 
-	glUniformMatrix4fv(mvLoc, 1, GL_FALSE, glm::value_ptr(mvMat));
-	glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(pMat));
-
-	glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
-	glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
-	glEnableVertexAttribArray(0);
-
-	glEnable(GL_DEPTH_TEST);
-	glDepthFunc(GL_LEQUAL);
-	glDrawArrays(GL_TRIANGLES, 0, 36);
-
-	//2. Draw the pyramid - use buffer 1
-	mMat = glm::translate(glm::mat4(1.0f), glm::vec3(pyrLocX, pyrLocY, pyrLocZ));
-	mvMat = vMat * mMat;
-
-	glUniformMatrix4fv(mvLoc, 1, GL_FALSE, glm::value_ptr(mvMat));
-	glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(pMat));
-
+	//Draw the sun first (sun = pyramid)
+	mvStack.push(mvStack.top());
+	mvStack.top() *= glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f));//Sun's position
+	mvStack.push(mvStack.top());
+	mvStack.top() *= glm::rotate(glm::mat4(1.0f), (float)currentTime ,glm::vec3(1.0f, 0.0f, 0.0f)); //Sun's rotation
+	glUniformMatrix4fv(mvLoc, 1, GL_FALSE, glm::value_ptr(mvStack.top()));
 	glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
 	glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(0);
-
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LEQUAL);
-	glDrawArrays(GL_TRIANGLES, 0, 18);
+	glDrawArrays(GL_TRIANGLES, 0, 18);	//Draw the sun
+	mvStack.pop(); //Remove the sun's axial rotation from the stack
 
+	//Next, Draw the planet (planet = cube)
+	mvStack.push(mvStack.top());
+	mvStack.top() *= glm::translate(glm::mat4(1.0f), glm::vec3(	sin(float(currentTime)) * 4.0,	0.0f,	cos(float(currentTime)) * 4.0)); // Planet's position
+	mvStack.push(mvStack.top());
+	mvStack.top() *= glm::rotate(glm::mat4(1.0f), float(currentTime), glm::vec3(0.0f, 1.0f, 0.0f)); //Planet's rotation
+	glUniformMatrix4fv(mvLoc, 1, GL_FALSE, glm::value_ptr(mvStack.top()));
+	glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
+	glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
+	glEnableVertexAttribArray(0);
+	//glEnable(GL_DEPTH_TEST);
+	//glDepthFunc(GL_LEQUAL);
+	glDrawArrays(GL_TRIANGLES, 0, 36); //Draw the planet
+	mvStack.pop(); //Remove the planet's axial rotation from the stack
+
+	//Finally, draw the moon (moon = cube)
+	mvStack.push(mvStack.top());
+	mvStack.top() *= glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, sin((float)currentTime) * 2.0, cos((float)currentTime) * 2.0));
+	mvStack.top() *= glm::rotate(glm::mat4(1.0f), float(currentTime), glm::vec3(0.0, 0.0, 1.0)); //Moon's rotation
+	mvStack.top() *= glm::scale(glm::mat4(1.0f), glm::vec3(0.25f,0.25f, 0.25f)); //Make the moon smaller
+	glUniformMatrix4fv(mvLoc, 1, GL_FALSE, glm::value_ptr(mvStack.top()));
+	glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
+	glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
+	glEnableVertexAttribArray(0);
+	glDrawArrays(GL_TRIANGLES, 0, 36);	//Draw the moon
+
+	//Cleanup: Remove moon scale/rotation/position, planet position, sun position and view matrices from the stack
+	mvStack.pop();
+	mvStack.pop();
+	mvStack.pop();
+	mvStack.pop();
 }
 
 void window_size_callback(GLFWwindow* win, int newWidth, int newHeight) {
